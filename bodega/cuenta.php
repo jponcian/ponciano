@@ -155,34 +155,32 @@
                 // Obtener la lista actualizada de productos y cantidades
                 let lista = window.ultimaLista || [];
                 let cantidades = window.cantidades || {};
-                // Si la lista está vacía, intentar obtenerla del DOM
+                
+                // Si la lista está vacía, intentar obtenerla del DOM (fallback)
                 if (!Array.isArray(lista) || lista.length === 0) {
+                     // El fallback del DOM sigue siendo útil si por alguna razón falla el state
                     lista = Array.from(document.querySelectorAll('.item.producto-card')).map(el => {
-                        // Obtener datos confiables desde los atributos data
                         let precio = el.getAttribute('data-precio');
                         let moneda = el.getAttribute('data-moneda');
                         if (precio === null || precio === undefined) {
-                            // Fallback: extraer del texto visual
                             const precioText = el.querySelector('.text-primary')?.textContent || '';
                             precio = parseFloat(precioText.split(' ')[0]) || 0;
                         } else {
                             precio = parseFloat(precio);
                         }
-                        if (!moneda) {
-                            const precioText = el.querySelector('.text-primary')?.textContent || '';
-                            moneda = precioText.includes('Bs') ? 'BS' : 'USD';
-                        }
                         return {
                             id: el.dataset.id,
-                            nombre: el.querySelector('.fw-bold')?.textContent || '',
-                            precio_venta_unidad: precio,
-                            moneda_compra: moneda
+                            display_name: el.querySelector('.fw-bold')?.textContent || '',
+                            display_price: precio,
+                            moneda_compra: (!moneda && el.querySelector('.text-primary')?.textContent.includes('Bs') ? 'BS' : 'USD')
                         };
                     });
                 }
+                
                 // Filtrar productos con cantidad > 0 (acepta decimales)
                 const productosUsados = lista.filter(p => (cantidades[p.id] && parseFloat(cantidades[p.id]) > 0));
                 const modalBody = document.getElementById('detalleCuentaBody');
+
                 if (productosUsados.length === 0) {
                     modalBody.innerHTML = '<div class="text-center text-muted">No hay productos en la cuenta.</div>';
                 } else {
@@ -190,7 +188,14 @@
                         totalBS = 0;
                     modalBody.innerHTML = '<ul class="list-group">' + productosUsados.map(p => {
                         const cantidad = parseFloat(cantidades[p.id]) || 0;
-                        const precio = (p.precio_venta_unidad !== undefined && p.precio_venta_unidad !== null && p.precio_venta_unidad !== '') ? Number(p.precio_venta_unidad) : 0;
+                        const precio = p.display_price !== undefined ? p.display_price : ((p.precio_venta_unidad !== undefined && p.precio_venta_unidad !== null && p.precio_venta_unidad !== '') ? Number(p.precio_venta_unidad) : 0);
+                        
+                        // Determinar etiqueta para detalle (si el nombre ya trae 'Paquete' no agregarlo)
+                        let nombreMostrar = p.display_name || p.nombre || '';
+                        if (p.id.endsWith && p.id.endsWith('_pkg') && !nombreMostrar.includes('Paquete')) {
+                             nombreMostrar += ' (Paquete)';
+                        }
+                        
                         const moneda = (p.moneda_compra && p.moneda_compra.toUpperCase() === 'BS') ? 'BS' : 'USD';
                         let precioUSD, precioBS, totalUSDItem, totalBSItem;
                         if (moneda === 'USD') {
@@ -208,7 +213,7 @@
                         totalBS += totalBSItem;
                         return `<li class="list-group-item d-flex flex-column align-items-start">
                             <div class="w-100 d-flex justify-content-between align-items-center">
-                                <span><b>${escapeHtml(p.nombre)}</b> <span class="badge bg-secondary ms-2">x${cantidad}</span></span>
+                                <span><b>${escapeHtml(nombreMostrar)}</b> <span class="badge bg-secondary ms-2">x${cantidad}</span></span>
                                 <span class="text-primary">${precioUSD.toFixed(2)} $ / ${precioBS.toFixed(2)} Bs</span>
                             </div>
                             <div class="w-100 text-end small text-muted">Subtotal: <b>${totalUSDItem.toFixed(2)} $ / ${totalBSItem.toFixed(2)} Bs</b></div>
@@ -217,7 +222,6 @@
                     // Sección de total
                     modalBody.innerHTML += `<div class='mt-3 text-center fw-bold'>Total:<br>${totalUSD.toFixed(2)} $ / ${totalBS.toFixed(2)} Bs</div>`;
                 }
-                // Mostrar el modal correctamente sin manipular aria-hidden manualmente
                 const modalEl = document.getElementById('detalleCuentaModal');
                 const modal = new bootstrap.Modal(modalEl);
                 modal.show();
@@ -256,17 +260,48 @@
                 renderList(data);
             }
 
-            function renderList(items) {
-                if (!Array.isArray(items) || items.length === 0) {
+            function renderList(rawItems) {
+                if (!Array.isArray(rawItems) || rawItems.length === 0) {
                     listEl.innerHTML = '<div class="empty">Sin productos</div>';
                     return;
                 }
-                // Estado de cantidades por producto
+
+                // Procesar la lista para crear filas independientes para paquetes
+                const displayItems = [];
+                rawItems.forEach(item => {
+                    // 1. Versión Unidad (Siempre agregada)
+                    const precioUnitario = (item.precio_venta_unidad !== undefined && item.precio_venta_unidad !== null && item.precio_venta_unidad !== '') ? Number(item.precio_venta_unidad) : (Number(item.precio_venta) || 0);
+                    
+                    // Clonar y ajustar para unidad
+                    displayItems.push({
+                        ...item,
+                        id: item.id.toString(), // ID original como string
+                        display_name: item.nombre,
+                        display_price: precioUnitario,
+                        is_package: false
+                    });
+
+                    // 2. Versión Paquete (Si existe)
+                    if (item.unidad_medida === 'paquete' && item.precio_venta_paquete && Number(item.precio_venta_paquete) > 0) {
+                        displayItems.push({
+                            ...item,
+                            id: item.id.toString() + '_pkg', // ID compuesto
+                            display_name: item.nombre + ' (Paquete)',
+                            display_price: Number(item.precio_venta_paquete),
+                            is_package: true
+                        });
+                    }
+                });
+
+                window.ultimaLista = displayItems; // Guardar lista expandida para otras funciones
                 if (!window.cantidades) window.cantidades = {};
-                listEl.innerHTML = items.map(i => {
+
+                listEl.innerHTML = displayItems.map(i => {
                     if (!(i.id in window.cantidades)) window.cantidades[i.id] = 0;
-                    const precio = (i.precio_venta_unidad !== undefined && i.precio_venta_unidad !== null && i.precio_venta_unidad !== '') ? Number(i.precio_venta_unidad) : (Number(i.precio_venta) || 0);
+                    
+                    const precio = i.display_price;
                     const moneda = (i.moneda_compra && i.moneda_compra.toUpperCase() === 'BS') ? 'Bs' : '$';
+                    
                     let precioMostrar = '';
                     if (moneda === '$') {
                         let precioBs = (typeof exchangeRate !== 'undefined' && exchangeRate > 0) ? (precio * exchangeRate) : 0;
@@ -274,13 +309,14 @@
                     } else {
                         precioMostrar = `${precio.toFixed(2)} Bs`;
                     }
+                    
                     // Agrega los datos en atributos para reconstrucción confiable
                     return `<div class="item producto-card" data-id="${i.id}" data-precio="${precio}" data-moneda="${i.moneda_compra}">
                         <div class="flex-grow-1">
-                            <span class="fw-bold">${escapeHtml(i.nombre)}</span>
+                            <span class="fw-bold">${escapeHtml(i.display_name)}</span>
                         </div>
                         <div style="min-width:120px;text-align:right;">
-                            <span class="fw-bold text-primary">${precioMostrar}</span>
+                            <span class="fw-bold text-primary display-precio">${precioMostrar}</span>
                         </div>
                         <div style="min-width:120px;display:flex;align-items:center;gap:4px;">
                             <button class="btn btn-sm btn-danger restar" title="Restar"><i class="fa-solid fa-minus"></i></button>
@@ -291,23 +327,24 @@
                 }).join('');
 
                 // Eventos para sumar/restar y actualizar total
-                listEl.querySelectorAll('.item').forEach(item => {
-                    const id = item.dataset.id;
-                    const input = item.querySelector('.cantidad-input');
-                    const btnMas = item.querySelector('.sumar');
-                    const btnMenos = item.querySelector('.restar');
+                listEl.querySelectorAll('.item').forEach(itemEl => {
+                    const id = itemEl.dataset.id;
+                    const input = itemEl.querySelector('.cantidad-input');
+                    const btnMas = itemEl.querySelector('.sumar');
+                    const btnMenos = itemEl.querySelector('.restar');
+                    
                     if (btnMas) {
                         btnMas.addEventListener('click', () => {
                             window.cantidades[id] = (window.cantidades[id] || 0) + 1;
                             input.value = window.cantidades[id];
-                            actualizarTotalCobrar(items);
+                            actualizarTotalCobrar(displayItems);
                         });
                     }
                     if (btnMenos) {
                         btnMenos.addEventListener('click', () => {
                             window.cantidades[id] = Math.max(0, (window.cantidades[id] || 0) - 1);
                             input.value = window.cantidades[id];
-                            actualizarTotalCobrar(items);
+                            actualizarTotalCobrar(displayItems);
                         });
                     }
                     if (input) {
@@ -315,13 +352,13 @@
                             const rawValue = input.value.trim();
                             if (rawValue === '') {
                                 window.cantidades[id] = 0;
-                                actualizarTotalCobrar(items);
+                                actualizarTotalCobrar(displayItems);
                                 return;
                             }
                             const parsed = parseFloat(rawValue.replace(',', '.'));
                             if (!isNaN(parsed)) {
                                 window.cantidades[id] = Math.max(0, parsed);
-                                actualizarTotalCobrar(items);
+                                actualizarTotalCobrar(displayItems);
                             }
                         });
                         input.addEventListener('blur', () => {
@@ -330,13 +367,15 @@
                         });
                     }
                 });
-                actualizarTotalCobrar(items);
+                actualizarTotalCobrar(displayItems);
             }
 
             function actualizarTotalCobrar(items) {
                 let totalBs = 0;
                 items.forEach(i => {
-                    const precio = (i.precio_venta_unidad !== undefined && i.precio_venta_unidad !== null && i.precio_venta_unidad !== '') ? Number(i.precio_venta_unidad) : (Number(i.precio_venta) || 0);
+                    // Usar display_price que ya viene calculado en renderList o calcular si es item raw (no debería pasar aqui si usamos displayItems)
+                    let precio = i.display_price !== undefined ? i.display_price : ((i.precio_venta_unidad !== undefined && i.precio_venta_unidad !== null && i.precio_venta_unidad !== '') ? Number(i.precio_venta_unidad) : (Number(i.precio_venta) || 0));
+
                     const moneda = (i.moneda_compra && i.moneda_compra.toUpperCase() === 'BS') ? 'Bs' : '$';
                     let precioBs = precio;
                     if (moneda === '$' && typeof exchangeRate !== 'undefined' && exchangeRate > 0) {
