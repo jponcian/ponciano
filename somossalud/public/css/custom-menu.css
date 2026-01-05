@@ -1,7 +1,0 @@
-/* Forzar que todos los enlaces del menú no tengan subrayado */
-.no-underline,
-.underline-none,
-.dropdown-link,
-.dropdown-link a {
-    text-decoration: none !important;
-}
