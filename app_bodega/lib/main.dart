@@ -585,16 +585,20 @@ class _ProductListScreenState extends State<ProductListScreen> {
           ),
         ],
       ),
-      bottomSheet: Container(
-        color: Colors.white, // Fondo blanco para cubrir detrás en zonas seguras
+      bottomNavigationBar: Container(
+        color: Colors.white,
         child: SafeArea(
           top: false,
           child: Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: 20,
+            ), // 20px extra abajo
             decoration: const BoxDecoration(
               color: Colors.white,
-              // Eliminamos sombra superior conflictiva o la hacemos sutil
               border: Border(top: BorderSide(color: Colors.black12)),
             ),
             child: InkWell(
