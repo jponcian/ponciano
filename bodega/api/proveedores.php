@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/cors.php';
 // Devuelve la lista de proveedores únicos de la tabla productos
 header('Content-Type: application/json');
 require_once __DIR__ . '/../db.php';
